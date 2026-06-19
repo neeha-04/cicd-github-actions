@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CI/CD Pipeline Dashboard</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+
+        :root {
+            --bg:       #0a0a0f;
+            --bg2:      rgba(0,255,136,0.03);
+            --border:   #00ff8822;
+            --border-h: #00ff8844;
+            --text:     #00ff88;
+            --dim:      #00ff8888;
+            --accent:   #00d4ff;
+            --warn:     #ffaa00;
+            --danger:   #ff4444;
+            --purple:   #a855f7;
+            --nav-bg:   rgba(0,0,0,0.92);
+            --mono:     'Share Tech Mono', monospace;
+            --orb:      'Orbitron', monospace;
+        }
+
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: var(--mono);
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* scanlines */
+        body::after {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.04) 2px, rgba(0,0,0,0.04) 4px);
+            pointer-events: none;
+            z-index: 9999;
+        }
+
+        /* ── LOADER ── */
+        #loader {
+            position: fixed; inset: 0;
+            background: #0a0a0f;
+            z-index: 99999;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            transition: opacity 0.5s;
+        }
+        .loader-text {
+            font-family: var(--orb);
+            color: var(--accent);
+            font-size: 1.5rem;
+            letter-spacing: 6px;
+            margin-bottom: 30px;
+            text-shadow: 0 0 20px var(--accent);
+        }
+        .loader-bar { width: 300px; height: 3px; background: #00ff8822; border-radius: 3px; overflow: hidden; }
+        .loader-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent), var(--text));
+            animation: load 1.6s ease forwards;
+            box-shadow: 0 0 10px var(--accent);
+        }
+        @keyframes load { from { width: 0 } to { width: 100% } }
+
+        /* ── PARTICLES ── */
+        #particles { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+
+        /* ── NAV ── */
+        nav {
+            position: fixed; top: 0; left: 0; right: 0;
+            z-index: 1000;
+            background: var(--nav-bg);
+            border-bottom: 1px solid var(--border);
+            padding: 14px 32px;
+            display: flex; align-items: center; justify-content: space-between;
+            backdrop-filter: blur(12px);
+        }
+        .nav-logo {
+            font-family: var(--orb);
+            font-size: 1rem; color: var(--accent);
+            text-shadow: 0 0 20px var(--accent);
+            text-decoration: none; letter-spacing: 3px;
+        }
+        .nav-tabs { display: flex; gap: 4px; }
+        .nav-tab {
+            background: none; border: 1px solid transparent;
+            color: var(--dim); font-family: var(--mono);
+            font-size: 0.75rem; letter-spacing: 2px;
+            padding: 6px 14px; border-radius: 4px;
+            cursor: pointer; text-transform: uppercase;
+            transition: all 0.2s;
+        }
+        .nav-tab:hover { color: var(--accent); border-color: var(--accent); background: rgba(0,212,255,0.05); }
+        .nav-tab.active { color: var(--accent); border-color: var(--accent); background: rgba(0,212,255,0.08); text-shadow: 0 0 8px var(--accent); }
+        .nav-right { display: flex; align-items: center; gap: 20px; }
+        #nav-clock { font-size: 0.85rem; color: var(--accent); letter-spacing: 2px; }
+        .nav-status { display: flex; align-items: center; gap: 8px; font-size: 0.75rem; letter-spacing: 1px; }
+        .status-dot { width: 8px; height: 8px; background: var(--text); border-radius: 50%; animation: pulse 2s infinite; box-shadow: 0 0 10px var(--text); }
+        @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.8)} }
+
+        /* ── CONTENT ── */
+        .main-content {
+            position: relative; z-index: 1;
+            padding: 100px 32px 40px;
+            max-width: 1200px; margin: 0 auto;
+            animation: fadeIn 0.5s ease;
+        }
+        @keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+
+        /* ── TABS ── */
+        .tab-pane { display: none; }
+        .tab-pane.active { display: block; }
+
+        /* ── SECTION TITLE ── */
+        .section-title {
+            font-family: var(--orb);
+            font-size: 0.7rem; letter-spacing: 4px;
+            text-transform: uppercase; color: var(--accent);
+            margin-bottom: 20px;
+            text-shadow: 0 0 10px var(--accent);
+        }
+
+        /* ── CARD ── */
+        .card {
+            background: var(--bg2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 24px;
+            margin-bottom: 20px;
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+        .card::before {
+            content: '';
+            position: absolute; top: 0; left: 0;
+            width: 3px; height: 100%;
+            background: linear-gradient(180deg, var(--accent), var(--text));
+        }
+        .card:hover {
+            border-color: var(--border-h);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0,255,136,0.08);
+        }
+        .card-title {
+            font-family: var(--orb); color: var(--accent);
+            font-size: 0.8rem; letter-spacing: 3px;
+            margin-bottom: 18px; text-transform: uppercase;
+        }
+
+        /* ── GRIDS ── */
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; }
+        @media(max-width:900px){ .grid-2,.grid-4{grid-template-columns:1fr 1fr;} }
+        @media(max-width:600px){ .grid-2,.grid-4{grid-template-columns:1fr;} .nav-tabs{display:none;} }
+
+        /* ── STAT CARDS ── */
+        .stat-card { text-align: center; }
+        .stat-icon { font-size: 2rem; margin-bottom: 12px; }
+        .stat-label { font-size: 0.65rem; letter-spacing: 2px; color: var(--dim); text-transform: uppercase; margin-bottom: 8px; }
+        .stat-value { font-family: var(--orb); font-size: 2.2rem; color: var(--text); line-height: 1; }
+        .stat-sub { font-size: 0.65rem; color: var(--dim); margin-top: 6px; letter-spacing: 1px; }
+        .c-accent { color: var(--accent); }
+        .c-warn   { color: var(--warn); }
+        .c-danger { color: var(--danger); }
+        .c-purple { color: var(--purple); }
+
+        /* ── PIPELINE ROW ── */
+        .pipeline-row {
+            display: flex; align-items: center;
+            padding: 28px; overflow-x: auto; gap: 0;
+        }
+        .p-stage { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 90px; }
+        .p-dot {
+            width: 54px; height: 54px; border-radius: 50%;
+            border: 2px solid var(--text);
+            background: rgba(0,255,136,0.05);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 22px;
+            box-shadow: 0 0 20px rgba(0,255,136,0.25);
+        }
+        .p-name { font-size: 0.62rem; letter-spacing: 2px; color: var(--dim); text-transform: uppercase; }
+        .p-status { font-size: 0.65rem; color: var(--text); font-weight: 600; letter-spacing: 1px; }
+        .p-line {
+            flex: 1; height: 2px; min-width: 30px; margin-bottom: 28px;
+            background: linear-gradient(90deg, var(--text), rgba(0,255,136,0.2));
+        }
+
+        /* ── KV ROWS ── */
+        .kv-row {
+            display: flex; align-items: center;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.82rem;
+        }
+        .kv-row:last-child { border-bottom: none; }
+        .kv-key { color: var(--dim); letter-spacing: 1px; }
+        .kv-val { color: var(--accent); letter-spacing: 1px; }
+
+        /* ── TAG ── */
+        .tag {
+            display: inline-block;
+            padding: 2px 10px; border-radius: 3px;
+            font-size: 0.72rem; letter-spacing: 1px;
+            border: 1px solid var(--border);
+            color: var(--accent); background: rgba(0,212,255,0.05);
+        }
+        .tag-green { color: var(--text); border-color: rgba(0,255,136,0.3); background: rgba(0,255,136,0.05); }
+        .tag-warn  { color: var(--warn); border-color: rgba(255,170,0,0.3); background: rgba(255,170,0,0.05); }
+        .tag-purple{ color: var(--purple); border-color: rgba(168,85,247,0.3); background: rgba(168,85,247,0.05); }
+
+        /* ── HEALTH DOT ── */
+        .h-dot {
+            display: inline-block; width: 8px; height: 8px;
+            border-radius: 50%; background: var(--text);
+            box-shadow: 0 0 8px var(--text);
+            margin-right: 8px; animation: pulse 2s infinite;
+        }
+
+        /* ── CODE BLOCK ── */
+        .code-block {
+            background: #020408;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            font-family: var(--mono);
+            font-size: 0.78rem;
+            color: var(--text);
+            overflow-x: auto;
+            white-space: pre;
+            line-height: 1.7;
+            text-shadow: 0 0 8px rgba(0,255,136,0.4);
+        }
+
+        /* ── STAGE CARDS ── */
+        .stage-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        @media(max-width:700px){ .stage-cards{grid-template-columns:1fr;} }
+        .stage-card {
+            padding: 24px; position: relative; overflow: hidden;
+        }
+        .stage-card::after {
+            content: '';
+            position: absolute; top: 0; left: 0; right: 0; height: 2px;
+            background: linear-gradient(90deg, var(--text), var(--accent));
+        }
+        .stage-num { font-size: 0.62rem; color: var(--dim); letter-spacing: 3px; margin-bottom: 10px; }
+        .stage-name { font-family: var(--orb); font-size: 0.9rem; color: var(--accent); margin-bottom: 6px; letter-spacing: 2px; }
+        .stage-tool { font-size: 0.72rem; color: var(--warn); letter-spacing: 1px; margin-bottom: 12px; }
+        .stage-desc { font-size: 0.78rem; color: var(--dim); line-height: 1.7; }
+        .stage-badge {
+            display: inline-flex; align-items: center; gap: 5px;
+            margin-top: 14px; font-size: 0.68rem; color: var(--text);
+            background: rgba(0,255,136,0.05); border: 1px solid rgba(0,255,136,0.3);
+            padding: 3px 10px; border-radius: 3px; letter-spacing: 1px;
+        }
+        .inline-code { font-family: var(--mono); font-size: 0.82em; color: var(--accent); background: rgba(0,212,255,0.08); padding: 1px 6px; border-radius: 3px; }
+
+        /* ── API EXPLORER ── */
+        .api-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        @media(max-width:700px){ .api-grid{grid-template-columns:1fr;} }
+        .endpoint-card {
+            padding: 18px 20px; cursor: pointer;
+            transition: all 0.2s; display: flex; flex-direction: column; gap: 8px;
+        }
+        .endpoint-card:hover { border-color: var(--accent); background: rgba(0,212,255,0.05); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,212,255,0.1); }
+        .endpoint-card.loading { opacity: 0.5; }
+        .ep-top { display: flex; align-items: center; gap: 10px; }
+        .ep-method {
+            font-size: 0.62rem; font-weight: 700; color: var(--text);
+            background: rgba(0,255,136,0.08); padding: 3px 8px;
+            border-radius: 3px; border: 1px solid rgba(0,255,136,0.3); letter-spacing: 1px;
+        }
+        .ep-path { font-size: 0.82rem; color: var(--accent); letter-spacing: 1px; }
+        .ep-desc { font-size: 0.72rem; color: var(--dim); }
+        .response-box {
+            grid-column: 1 / -1;
+            background: #020408; border: 1px solid var(--border);
+            border-radius: 10px; overflow: hidden; display: none;
+        }
+        .response-box.show { display: block; }
+        .resp-top {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 10px 16px; border-bottom: 1px solid var(--border);
+            background: rgba(0,212,255,0.03);
+        }
+        .resp-path { font-size: 0.72rem; color: var(--dim); letter-spacing: 1px; }
+        .resp-ok   { font-size: 0.72rem; color: var(--text); letter-spacing: 1px; }
+        .resp-close { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 16px; }
+        pre#resp-body { padding: 16px; font-family: var(--mono); font-size: 0.78rem; line-height: 1.7; color: var(--text); overflow-x: auto; white-space: pre; text-shadow: 0 0 6px rgba(0,255,136,0.3); }
+
+        /* ── ABOUT ── */
+        .about-hero {
+            text-align: center; padding: 40px 0 36px;
+        }
+        .about-hero .hero-icon { font-size: 72px; margin-bottom: 20px; animation: float 3s ease-in-out infinite; }
+        @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)} }
+        .about-hero h2 {
+            font-family: var(--orb); font-size: 2.4rem;
+            color: var(--accent); letter-spacing: 4px;
+            text-shadow: 0 0 30px var(--accent); margin-bottom: 14px;
+        }
+        .about-hero p { color: var(--dim); font-size: 0.88rem; letter-spacing: 2px; max-width: 560px; margin: 0 auto 32px; line-height: 1.8; }
+        .badge-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+        .badge-btn {
+            padding: 8px 20px; border: 1px solid; border-radius: 4px;
+            font-family: var(--mono); font-size: 0.72rem; letter-spacing: 2px;
+            cursor: pointer; transition: all 0.3s; text-transform: uppercase;
+        }
+        .badge-btn:hover { transform: scale(1.05); box-shadow: 0 0 14px currentColor; }
+
+        /* Modal */
+        #modal-overlay {
+            display: none; position: fixed; inset: 0;
+            z-index: 9998; background: rgba(0,0,0,0.85);
+            backdrop-filter: blur(6px);
+            align-items: center; justify-content: center;
+        }
+        #modal-box {
+            background: #0a0a0f; border: 1px solid var(--accent);
+            border-radius: 14px; padding: 40px; max-width: 500px;
+            width: 90%; position: relative;
+            box-shadow: 0 0 50px rgba(0,212,255,0.2);
+            animation: popIn 0.3s ease;
+        }
+        @keyframes popIn { from{transform:scale(0.85);opacity:0} to{transform:scale(1);opacity:1} }
+        .modal-close {
+            position: absolute; top: 14px; right: 14px;
+            background: none; border: 1px solid var(--danger);
+            color: var(--danger); padding: 3px 10px;
+            cursor: pointer; font-family: var(--mono); border-radius: 3px;
+        }
+        #modal-icon { font-size: 48px; margin-bottom: 14px; }
+        #modal-title { font-family: var(--orb); color: var(--accent); font-size: 1.1rem; letter-spacing: 4px; margin-bottom: 8px; }
+        #modal-version { color: var(--warn); font-size: 0.75rem; letter-spacing: 2px; margin-bottom: 18px; }
+        #modal-desc { color: var(--dim); line-height: 1.8; font-size: 0.85rem; margin-bottom: 18px; }
+        .modal-use-box { background: rgba(0,255,136,0.04); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+        .modal-use-label { color: var(--accent); font-size: 0.7rem; letter-spacing: 2px; margin-bottom: 10px; }
+        #modal-use-text { color: var(--text); font-size: 0.82rem; line-height: 1.8; }
+
+        /* ── BTN ── */
+        .btn {
+            display: inline-block; padding: 10px 24px;
+            border: 1px solid var(--accent); color: var(--accent);
+            text-decoration: none; font-family: var(--mono);
+            font-size: 0.8rem; letter-spacing: 2px; text-transform: uppercase;
+            transition: all 0.3s; background: transparent;
+            cursor: pointer; border-radius: 4px;
+        }
+        .btn:hover { background: var(--accent); color: #000; box-shadow: 0 0 20px var(--accent); }
+    
+/* ===== Modern Overview Refresh ===== */
+.card{
+    background: rgba(10,18,30,0.55) !important;
+    backdrop-filter: blur(14px);
+    border: 1px solid rgba(0,212,255,0.15) !important;
+    border-radius: 18px !important;
+}
+.card:hover{
+    transform: translateY(-4px) !important;
+    box-shadow: 0 16px 40px rgba(0,212,255,0.12) !important;
+}
+.section-title{
+    font-size: 0.9rem !important;
+    letter-spacing: 6px !important;
+}
+.stat-card{
+    border-radius: 20px;
+}
+.p-dot{
+    border-color: var(--accent) !important;
+    background: radial-gradient(circle, rgba(0,212,255,.12), rgba(0,255,136,.05)) !important;
+}
+.quick-btn{
+    padding:8px 18px;
+    border-radius:10px;
+    cursor:pointer;
+    border:1px solid rgba(0,212,255,.25);
+    background:linear-gradient(135deg,rgba(0,212,255,.18),rgba(0,255,136,.12));
+    color:var(--accent);
+    font-family:var(--mono);
+    letter-spacing:1px;
+    transition:.3s ease;
+}
+.quick-btn:hover{
+    transform:translateY(-2px);
+    box-shadow:0 0 20px rgba(0,212,255,.25);
+}
+
+</style>
+</head>
+<body>
+  
+<!-- Particles -->
+<canvas id="particles"></canvas>
+
+<!-- Modal (for About tech badges) -->
+<div id="modal-overlay" onclick="closeModal()">
+    <div id="modal-box" onclick="event.stopPropagation()">
+        <button class="modal-close" onclick="closeModal()">✕ CLOSE</button>
+        <div id="modal-icon"></div>
+        <div id="modal-title"></div>
+        <div id="modal-version"></div>
+        <div id="modal-desc"></div>
+        <div class="modal-use-box">
+            <div class="modal-use-label">USED IN THIS PROJECT FOR:</div>
+            <div id="modal-use-text"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Nav -->
+<nav>
+    <a href="/" class="nav-logo">⚙️ CICD//PIPELINE</a>
+    <div class="nav-tabs">
+        <button class="nav-tab active" onclick="switchTab('overview',this)">Overview</button>
+        <button class="nav-tab" onclick="switchTab('health',this)">Health</button>
+        <button class="nav-tab" onclick="switchTab('appinfo',this)">App Info</button>
+        <button class="nav-tab" onclick="switchTab('pipeline',this)">Pipeline</button>
+        <button class="nav-tab" onclick="switchTab('api',this)">API</button>
+        <button class="nav-tab" onclick="switchTab('about',this)">About</button>
+    </div>
+    <div class="nav-right">
+        <div id="nav-clock">--:--:--</div>
+        <div class="nav-status">
+            <div class="status-dot"></div>
+            <span style="letter-spacing:2px;font-size:0.75rem;">ONLINE</span>
+        </div>
+    </div>
+</nav>
+
+<div class="main-content">
+
+    <!-- ── OVERVIEW ── -->
+    <div class="tab-pane active" id="tab-overview">
+        <div class="section-title">Pipeline Overview</div>
+        <div class="grid-4" style="margin-bottom:24px;">
+            <div class="card stat-card">
+                <div class="stat-icon">✅</div>
+                <div class="stat-label">Pipeline Status</div>
+                <div class="stat-value c-accent" style="font-size:1.6rem;">PASS</div>
+                <div class="stat-sub">All stages passing</div>
+            </div>
+            <div class="card stat-card">
+                <div class="stat-icon">🧪</div>
+                <div class="stat-label">Tests</div>
+                <div class="stat-value">10</div>
+                <div class="stat-sub">All passing</div>
+            </div>
+            <div class="card stat-card">
+                <div class="stat-icon">⚙️</div>
+                <div class="stat-label">Stages</div>
+                <div class="stat-value c-purple">5</div>
+                <div class="stat-sub">Lint→Test→Build→Push→Done</div>
+            </div>
+            <div class="card stat-card">
+                <div class="stat-icon">🔌</div>
+                <div class="stat-label">Endpoints</div>
+                <div class="stat-value c-warn">5</div>
+                <div class="stat-sub">All live</div>
+            </div>
+        </div>
+
+        <div class="section-title">Live Pipeline</div>
+        <div class="card pipeline-row">
+            <div class="p-stage"><div class="p-dot">🔍</div><div class="p-name">Lint</div><div class="p-status">✔ pass</div></div>
+            <div class="p-line"></div>
+            <div class="p-stage"><div class="p-dot">🧪</div><div class="p-name">Test</div><div class="p-status">✔ pass</div></div>
+            <div class="p-line"></div>
+            <div class="p-stage"><div class="p-dot">🐳</div><div class="p-name">Build</div><div class="p-status">✔ pass</div></div>
+            <div class="p-line"></div>
+            <div class="p-stage"><div class="p-dot">📦</div><div class="p-name">Push</div><div class="p-status">✔ pass</div></div>
+            <div class="p-line"></div>
+            <div class="p-stage"><div class="p-dot">🚀</div><div class="p-name">Done</div><div class="p-status">✔ pass</div></div>
+        </div>
+
+        <div class="grid-2">
+            <div>
+                <div class="section-title">Tech Stack</div>
+                <div class="card">
+                    <div class="kv-row"><span class="kv-key">Language</span><span class="tag">🐍 Python 3.11</span></div>
+                    <div class="kv-row"><span class="kv-key">Framework</span><span class="tag">⚡ Flask</span></div>
+                    <div class="kv-row"><span class="kv-key">Testing</span><span class="tag">🧪 Pytest</span></div>
+                    <div class="kv-row"><span class="kv-key">Linting</span><span class="tag">🔍 Flake8</span></div>
+                    <div class="kv-row"><span class="kv-key">Container</span><span class="tag">🐳 Docker</span></div>
+                    <div class="kv-row"><span class="kv-key">CI/CD</span><span class="tag">⚙️ GitHub Actions</span></div>
+                </div>
+            </div>
+            <div>
+                <div class="section-title">Quick Links</div>
+                <div class="card">
+                    
+<div class="kv-row"><span class="kv-key">Health</span><button class="quick-btn" onclick="window.open('/health','_blank')">OPEN</button></div>
+<div class="kv-row"><span class="kv-key">App Info</span><button class="quick-btn" onclick="window.open('/api/info','_blank')">OPEN</button></div>
+<div class="kv-row"><span class="kv-key">Pipeline</span><button class="quick-btn" onclick="window.open('/api/pipeline-status','_blank')">OPEN</button></div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── HEALTH CHECK ── -->
+    <div class="tab-pane" id="tab-health">
+        <div class="section-title">Service Health</div>
+        <div class="grid-2">
+            <div class="card">
+                <div class="card-title">💚 Health Status</div>
+                <div class="kv-row">
+                    <span class="kv-key">Status</span>
+                    <span class="kv-val"><span class="h-dot"></span><span id="h-status">checking...</span></span>
+                </div>
+                <div class="kv-row"><span class="kv-key">Service</span><span class="kv-val" id="h-service">—</span></div>
+                <div class="kv-row"><span class="kv-key">Timestamp</span><span class="kv-val" id="h-timestamp">—</span></div>
+                <div class="kv-row"><span class="kv-key">Uptime</span><span class="kv-val" style="color:var(--text);">● RUNNING</span></div>
+            </div>
+            <div class="card">
+                <div class="card-title">📡 Raw JSON — /health</div>
+                <pre id="health-json" class="code-block" style="margin:0;">Loading...</pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── APP INFO ── -->
+    <div class="tab-pane" id="tab-appinfo">
+        <div class="section-title">Application Information</div>
+        <div class="grid-2">
+            <div class="card">
+                <div class="card-title">ℹ️ App Details</div>
+                <div class="kv-row"><span class="kv-key">Application</span><span id="i-app" class="tag">—</span></div>
+                <div class="kv-row"><span class="kv-key">Version</span><span id="i-ver" class="tag tag-green">—</span></div>
+                <div class="kv-row"><span class="kv-key">Python Version</span><span id="i-py" class="tag">—</span></div>
+                <div class="kv-row"><span class="kv-key">Environment</span><span id="i-env" class="tag tag-purple">—</span></div>
+            </div>
+            <div class="card">
+                <div class="card-title">📡 Raw JSON — /api/info</div>
+                <pre id="info-json" class="code-block" style="margin:0;">Loading...</pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── PIPELINE ── -->
+    <div class="tab-pane" id="tab-pipeline">
+        <div class="section-title">CI/CD Pipeline Stages</div>
+        <div class="stage-cards">
+            <div class="card stage-card">
+                <div class="stage-num">STAGE 01</div>
+                <div class="stage-name">🔍 Code Lint</div>
+                <div class="stage-tool">flake8</div>
+                <div class="stage-desc">Runs flake8 on the <span class="inline-code">app/</span> directory. Checks PEP8 style, unused imports, line length (max 120), and syntax errors. Pipeline fails here if code quality is poor.</div>
+                <div class="stage-badge">✔ passing</div>
+            </div>
+            <div class="card stage-card">
+                <div class="stage-num">STAGE 02</div>
+                <div class="stage-name">🧪 Automated Tests</div>
+                <div class="stage-tool">pytest + pytest-cov</div>
+                <div class="stage-desc">Runs all 10 tests in <span class="inline-code">tests/</span> with coverage reporting. Covers all routes, API endpoints, edge cases, and error responses. Coverage report uploaded as artifact.</div>
+                <div class="stage-badge">✔ 10/10 passing</div>
+            </div>
+            <div class="card stage-card">
+                <div class="stage-num">STAGE 03</div>
+                <div class="stage-name">🐳 Docker Build</div>
+                <div class="stage-tool">Docker + curl smoke test</div>
+                <div class="stage-desc">Builds the Docker image from <span class="inline-code">Dockerfile</span>, starts the container with test env vars, waits 5s, then hits <span class="inline-code">/health</span> with curl. Fails if container doesn't respond.</div>
+                <div class="stage-badge">✔ image built & verified</div>
+            </div>
+            <div class="card stage-card">
+                <div class="stage-num">STAGE 04</div>
+                <div class="stage-name">📦 Docker Hub Push</div>
+                <div class="stage-tool">docker/build-push-action</div>
+                <div class="stage-desc">Only runs on push to <span class="inline-code">main</span> branch. Logs in to Docker Hub using GitHub Secrets, pushes image tagged as <span class="inline-code">:latest</span> and <span class="inline-code">:commit-sha</span>.</div>
+                <div class="stage-badge">✔ pushed to registry</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── API EXPLORER ── -->
+    <div class="tab-pane" id="tab-api">
+        <div class="section-title">Click any endpoint to test it live</div>
+        <div class="api-grid">
+            <div class="card endpoint-card" onclick="testApi('/health',this)">
+                <div class="ep-top"><span class="ep-method">GET</span><span class="ep-path">/health</span></div>
+                <div class="ep-desc">Service health check — status, timestamp, service name</div>
+            </div>
+            <div class="card endpoint-card" onclick="testApi('/api/info',this)">
+                <div class="ep-top"><span class="ep-method">GET</span><span class="ep-path">/api/info</span></div>
+                <div class="ep-desc">App metadata — name, version, Python version, environment</div>
+            </div>
+            <div class="card endpoint-card" onclick="testApi('/api/pipeline-status',this)">
+                <div class="ep-top"><span class="ep-method">GET</span><span class="ep-path">/api/pipeline-status</span></div>
+                <div class="ep-desc">CI/CD stage names and current status</div>
+            </div>
+            <div class="response-box" id="api-response">
+                <div class="resp-top">
+                    <span class="resp-path" id="resp-path-label">—</span>
+                    <span class="resp-ok">200 OK</span>
+                    <button class="resp-close" onclick="document.getElementById('api-response').classList.remove('show')">✕</button>
+                </div>
+                <pre id="resp-body">—</pre>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- ── ABOUT ── -->
+    <div class="tab-pane" id="tab-about">
+        <div class="about-hero">
+            <div class="hero-icon">⚙️</div>
+            <h2>CICD//PIPELINE</h2>
+            <p>Production-ready CI/CD automation · GitHub Actions · Docker · Flask · Pytest</p>
+            <div class="badge-row">
+                <span class="badge-btn" onclick="showModal('python')" style="border-color:var(--accent);color:var(--accent);">🐍 PYTHON 3.11</span>
+                <span class="badge-btn" onclick="showModal('flask')" style="border-color:var(--text);color:var(--text);">⚡ FLASK</span>
+                <span class="badge-btn" onclick="showModal('docker')" style="border-color:var(--accent);color:var(--accent);">🐳 DOCKER</span>
+                <span class="badge-btn" onclick="showModal('pytest')" style="border-color:var(--warn);color:var(--warn);">🧪 PYTEST</span>
+                <span class="badge-btn" onclick="showModal('actions')" style="border-color:var(--danger);color:var(--danger);">⚙️ GITHUB ACTIONS</span>
+            </div>
+        </div>
+
+        <div class="grid-2" style="margin-bottom:20px;">
+            <div class="card">
+                <div class="card-title">🎯 Project Purpose</div>
+                <div style="font-size:0.82rem;color:var(--dim);line-height:1.9;">
+                    This project demonstrates a complete CI/CD pipeline using GitHub Actions for a Dockerized Flask application. Every push to the main branch automatically triggers lint checks, test runs, Docker image builds, and registry pushes — with zero manual intervention.
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-title">🏗️ Pipeline Architecture</div>
+                <div style="font-size:0.82rem;line-height:2.4;color:var(--dim);">
+                    <div>📥 Code Push → GitHub</div>
+                    <div style="color:var(--accent);">&nbsp;&nbsp;└── Trigger GitHub Actions Workflow</div>
+                    <div style="color:var(--text);">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── Stage 1: Flake8 Lint</div>
+                    <div style="color:var(--warn);">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── Stage 2: Pytest (10 tests)</div>
+                    <div style="color:var(--accent);">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── Stage 3: Docker Build + Smoke Test</div>
+                    <div style="color:var(--text);">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── Stage 4: Push to Docker Hub</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">📋 Project Details</div>
+            <div class="grid-2" style="margin:0;">
+                <div>
+                    <div class="kv-row"><span class="kv-key">Project</span><span class="kv-val">CI/CD Demo Application</span></div>
+                    <div class="kv-row"><span class="kv-key">Internship</span><span class="kv-val">CodTech IT Solutions</span></div>
+                    <div class="kv-row"><span class="kv-key">Task</span><span class="kv-val">Task 2 — CI/CD Pipeline</span></div>
+                </div>
+                <div>
+                    <div class="kv-row"><span class="kv-key">Version</span><span class="tag tag-green">v1.0.0</span></div>
+                    <div class="kv-row"><span class="kv-key">Tests</span><span class="tag">10 / 10 passing</span></div>
+                    <div class="kv-row"><span class="kv-key">Status</span><span class="tag tag-green">● All systems go</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div><!-- /main-content -->
+
+<script>
+// ── TAB SWITCH ──
+function switchTab(name, el) {
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    el.classList.add('active');
+    if (name === 'health')   loadHealth();
+    if (name === 'appinfo')  loadInfo();
+}
+
+// ── HEALTH ──
+async function loadHealth() {
+    document.getElementById('health-json').textContent = 'Fetching /health ...';
+    try {
+        const r = await fetch('/health');
+        const d = await r.json();
+        document.getElementById('h-status').textContent  = d.status;
+        document.getElementById('h-service').textContent = d.service;
+        document.getElementById('h-timestamp').textContent = new Date(d.timestamp).toLocaleTimeString();
+        document.getElementById('health-json').textContent = JSON.stringify(d, null, 2);
+    } catch(e) {
+        document.getElementById('health-json').textContent = 'Error: ' + e.message;
+        document.getElementById('h-status').textContent = 'unreachable';
+    }
+}
+
+// ── APP INFO ──
+async function loadInfo() {
+    document.getElementById('info-json').textContent = 'Fetching /api/info ...';
+    try {
+        const r = await fetch('/api/info');
+        const d = await r.json();
+        document.getElementById('i-app').textContent = d.app;
+        document.getElementById('i-ver').textContent = 'v' + d.version;
+        document.getElementById('i-py').textContent  = d.python_version;
+        document.getElementById('i-env').textContent = d.environment;
+        document.getElementById('info-json').textContent = JSON.stringify(d, null, 2);
+    } catch(e) {
+        document.getElementById('info-json').textContent = 'Error: ' + e.message;
+    }
+}
+
+// ── API EXPLORER ──
+async function testApi(path, card) {
+    document.getElementById('resp-path-label').textContent = path;
+    document.getElementById('resp-body').textContent = 'Loading...';
+    document.getElementById('api-response').classList.add('show');
+    card.classList.add('loading');
+    try {
+        const r = await fetch(path);
+        const d = await r.json();
+        document.getElementById('resp-body').textContent = JSON.stringify(d, null, 2);
+    } catch(e) {
+        document.getElementById('resp-body').textContent = 'Error: ' + e.message;
+    }
+    card.classList.remove('loading');
+}
+
+// ── ABOUT MODAL ──
+const techInfo = {
+    python: {
+        icon:'🐍', title:'PYTHON 3.11', version:'VERSION 3.11.x',
+        desc:'Python is the core language for this project — clean syntax, powerful stdlib, and first-class support for web frameworks and testing tools.',
+        use:'✅ Core language for the Flask web app\n✅ Handles all backend routing and logic\n✅ Used for all 10 automated tests\n✅ Runs inside the Docker container'
+    },
+    flask: {
+        icon:'⚡', title:'FLASK', version:'VERSION 2.x',
+        desc:'Flask is a lightweight Python web framework. Minimal, flexible, and perfect for building REST APIs without unnecessary complexity.',
+        use:'✅ Serves all web pages and API endpoints\n✅ Blueprint architecture for clean routing\n✅ Renders this dashboard HTML\n✅ Handles /health, /api/info routes'
+    },
+    docker: {
+        icon:'🐳', title:'DOCKER', version:'LATEST',
+        desc:'Docker packages the Flask app with all its dependencies into an isolated container. Eliminates environment differences between dev and production.',
+        use:'✅ Containerizes the Flask application\n✅ Image built and smoke-tested in CI\n✅ Pushed to Docker Hub on every main push\n✅ Tagged with :latest and :commit-sha'
+    },
+    pytest: {
+        icon:'🧪', title:'PYTEST', version:'7.4.x + pytest-cov',
+        desc:'Pytest is Python\'s most popular testing framework. Simple to write, powerful to run, with excellent coverage reporting via pytest-cov.',
+        use:'✅ 10 automated tests across all routes\n✅ Coverage report generated in CI\n✅ Covers edge cases and error responses\n✅ Runs as Stage 2 in the pipeline'
+    },
+    actions: {
+        icon:'⚙️', title:'GITHUB ACTIONS', version:'YAML v2',
+        desc:'GitHub Actions automates the entire CI/CD workflow directly inside GitHub. Every push triggers the pipeline — no separate CI server needed.',
+        use:'✅ Orchestrates all 4 pipeline stages\n✅ Stores Docker Hub credentials as Secrets\n✅ Uploads coverage reports as artifacts\n✅ Pushes Docker image on main branch only'
+    }
+};
+
+function showModal(key) {
+    const info = techInfo[key];
+    document.getElementById('modal-icon').textContent    = info.icon;
+    document.getElementById('modal-title').textContent   = info.title;
+    document.getElementById('modal-version').textContent = info.version;
+    document.getElementById('modal-desc').textContent    = info.desc;
+    document.getElementById('modal-use-text').innerHTML  = info.use.replace(/\n/g,'<br>');
+    document.getElementById('modal-overlay').style.display = 'flex';
+}
+function closeModal() {
+    document.getElementById('modal-overlay').style.display = 'none';
+}
+document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); });
+
+// ── CLOCK ──
+function updateClock() {
+    document.getElementById('nav-clock').textContent = new Date().toLocaleTimeString();
+}
+updateClock(); setInterval(updateClock, 1000);
+
+// ── LOADER ──
+window.addEventListener('load', () => {
+    setTimeout(() => {
+        const loader = document.getElementById('loader');
+        loader.style.opacity = '0';
+        setTimeout(() => loader.style.display = 'none', 500);
+    }, 1800);
+});
+
+// ── PARTICLES ──
+const canvas = document.getElementById('particles');
+const ctx    = canvas.getContext('2d');
+canvas.width  = window.innerWidth;
+canvas.height = window.innerHeight;
+
+const particles = Array.from({length: 80}, () => ({
+    x: Math.random() * canvas.width,
+    y: Math.random() * canvas.height,
+    vx: (Math.random() - 0.5) * 0.5,
+    vy: (Math.random() - 0.5) * 0.5,
+    size: Math.random() * 2,
+    opacity: Math.random() * 0.4
+}));
+
+function animateParticles() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    particles.forEach(p => {
+        p.x += p.vx; p.y += p.vy;
+        if(p.x < 0 || p.x > canvas.width)  p.vx *= -1;
+        if(p.y < 0 || p.y > canvas.height)  p.vy *= -1;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+        ctx.fillStyle = `rgba(0,212,255,${p.opacity})`;
+        ctx.fill();
+    });
+    particles.forEach((p1, i) => {
+        particles.slice(i+1).forEach(p2 => {
+            const dist = Math.hypot(p1.x-p2.x, p1.y-p2.y);
+            if(dist < 100) {
+                ctx.beginPath();
+                ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+                ctx.strokeStyle = `rgba(0,212,255,${0.1*(1-dist/100)})`;
+                ctx.lineWidth = 0.5; ctx.stroke();
+            }
+        });
+    });
+    requestAnimationFrame(animateParticles);
+}
+animateParticles();
+
+window.addEventListener('resize', () => {
+    canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+});
+
+// Pre-load health on page open
+loadHealth();
+</script>
+</body>
+</html>

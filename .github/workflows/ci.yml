@@ -1,0 +1,167 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  IMAGE_NAME: cicd-demo-app
+  REGISTRY: ghcr.io
+  IMAGE_FULL: ghcr.io/${{ github.repository_owner }}/cicd-demo-app
+
+jobs:
+  # ──────────────────────────────────────────────
+  # STAGE 1 — Lint
+  # ──────────────────────────────────────────────
+  lint:
+    name: 🔍 Code Quality Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-lint-${{ hashFiles('requirements-dev.txt') }}
+          restore-keys: pip-lint-
+
+      - run: pip install flake8
+      - run: flake8 app/ --max-line-length=120 --exclude=__pycache__
+
+  # ──────────────────────────────────────────────
+  # STAGE 2 — Matrix Tests (Python 3.10, 3.11, 3.12)
+  # ──────────────────────────────────────────────
+  test:
+    name: 🧪 Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    needs: lint
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-test-${{ matrix.python-version }}-${{ hashFiles('requirements-dev.txt') }}
+          restore-keys: pip-test-${{ matrix.python-version }}-
+
+      - run: pip install -r requirements-dev.txt
+      - run: pytest --cov=app --cov-report=term-missing tests/ -v
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.python-version }}
+          path: .coverage
+
+  # ──────────────────────────────────────────────
+  # STAGE 3 — Build, Scan & Push to GHCR
+  # ──────────────────────────────────────────────
+  build:
+    name: 🐳 Build, Scan & Push Image
+    runs-on: ubuntu-latest
+    needs: test
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Docker image
+        run: docker build -t ${{ env.IMAGE_FULL }}:latest .
+
+      - name: Smoke test — hit /health
+        run: |
+          docker run -d -p 5000:5000 --name smoke_test ${{ env.IMAGE_FULL }}:latest
+          sleep 5
+          curl --fail http://localhost:5000/health || (docker logs smoke_test && exit 1)
+          docker stop smoke_test
+
+      - name: Scan image with Trivy (CRITICAL + HIGH)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_FULL }}:latest
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'       # don't fail the build, just report
+
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Push image to GHCR
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          docker tag ${{ env.IMAGE_FULL }}:latest ${{ env.IMAGE_FULL }}:${{ github.sha }}
+          docker push ${{ env.IMAGE_FULL }}:latest
+          docker push ${{ env.IMAGE_FULL }}:${{ github.sha }}
+
+  # ──────────────────────────────────────────────
+  # STAGE 4 — Deploy to Render (production env)
+  # ──────────────────────────────────────────────
+  deploy:
+    name: 🚀 Deploy to Production
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment:
+      name: production
+      url: ${{ vars.RENDER_APP_URL }}
+
+    steps:
+      - name: Trigger Render deploy hook
+        run: |
+          curl --fail -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" \
+            -H "Content-Type: application/json"
+
+      - name: Wait for deployment to be live
+        run: |
+          echo "Waiting for Render to spin up..."
+          sleep 30
+          curl --fail --retry 5 --retry-delay 10 \
+            "${{ vars.RENDER_APP_URL }}/health" | jq .
+
+  # ──────────────────────────────────────────────
+  # STAGE 5 — Summary
+  # ──────────────────────────────────────────────
+  notify:
+    name: ✅ Pipeline Summary
+    runs-on: ubuntu-latest
+    needs: [lint, test, build, deploy]
+    if: always()
+    steps:
+      - run: |
+          echo "==========================================="
+          echo "  Lint   : ${{ needs.lint.result }}"
+          echo "  Test   : ${{ needs.test.result }}"
+          echo "  Build  : ${{ needs.build.result }}"
+          echo "  Deploy : ${{ needs.deploy.result }}"
+          echo "  Commit : ${{ github.sha }}"
+          echo "  Actor  : ${{ github.actor }}"
+          echo "==========================================="
