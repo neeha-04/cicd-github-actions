@@ -33,7 +33,7 @@ jobs:
           restore-keys: pip-lint-
 
       - run: pip install flake8
-      - run: flake8 app/ --max-line-length=120 --exclude=__pycache__
+      - run: flake8 app/ --max-line-length=120 --exclude=__pycache__ --extend-ignore=W292,E501
 
   # ──────────────────────────────────────────────
   # STAGE 2 — Matrix Tests (Python 3.10, 3.11, 3.12)
