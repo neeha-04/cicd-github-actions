@@ -137,8 +137,12 @@ jobs:
     steps:
       - name: Trigger Render deploy hook
         run: |
-          curl --fail -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" \
-            -H "Content-Type: application/json"
+          if [ -n "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" ]; then
+            curl --fail -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" \
+              -H "Content-Type: application/json"
+          else
+            echo "No deploy hook configured, skipping."
+          fi
 
       - name: Wait for deployment to be live
         run: |
